@@ -3,11 +3,12 @@
 #include "GameplayTagStack.h"
 #include "ModularPlayerState.h"
 #include "ActorComponent/ModularAbilitySystemComponent.h"
+#include "Player/ModularExperiencePlayerState.h"
 
 #include "ModularAbilityPlayerState.generated.h"
 
 UCLASS(Config = "Game")
-class MODULARGAMEPLAYABILITIES_API AModularAbilityPlayerState : public AModularPlayerState
+class MODULARGAMEPLAYABILITIES_API AModularAbilityPlayerState : public AModularExperiencePlayerState
 {
 	GENERATED_BODY()
 
@@ -34,11 +35,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ModularAbility")
 	bool HasStatTag(FGameplayTag Tag) const;
 
+	void GetLifetimeReplicatedProps(TArray< FLifetimeProperty > & OutLifetimeProps) const;
+
 private:
 	// The ability system component sub-object used by player characters.
 	UPROPERTY(VisibleAnywhere, Category = "ModularAbility|PlayerState")
 	TObjectPtr<UModularAbilitySystemComponent> ModularAbilitySystemComponent;
 
-	UPROPERTY(Replicated)
-	FGameplayTagStackContainer StatTags;
+	//UPROPERTY(Replicated)
+	//FGameplayTagStackContainer StatTags;
 };

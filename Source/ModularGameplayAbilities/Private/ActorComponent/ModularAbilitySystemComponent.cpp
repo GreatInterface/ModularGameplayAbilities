@@ -51,7 +51,7 @@ void UModularAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, 
 		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
 		{
 			if (UModularGameplayAbility* ModularAbilityCDO = CastChecked<UModularGameplayAbility>(AbilitySpec.Ability);
-				ModularAbilityCDO->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::NonInstanced)
+				ModularAbilityCDO->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::InstancedPerActor)
 			{
 				for (TArray<UGameplayAbility*> Instances = AbilitySpec.GetAbilityInstances();
 					UGameplayAbility* AbilityInstance : Instances)
@@ -90,8 +90,16 @@ void UModularAbilitySystemComponent::TryActivateAbilitiesOnSpawn()
 	ABILITYLIST_SCOPE_LOCK();
 	for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
 	{
-		const UModularGameplayAbility* ModularAbilityCDO = CastChecked<UModularGameplayAbility>(AbilitySpec.Ability);
-		ModularAbilityCDO->TryActivateAbilityOnSpawn(AbilityActorInfo.Get(), AbilitySpec);
+		for (TArray<UGameplayAbility*> Instances = AbilitySpec.GetAbilityInstances();
+					UGameplayAbility* AbilityInstance : Instances)
+		{
+			if (UModularGameplayAbility* ModularAbilityInstance = Cast<UModularGameplayAbility>(AbilityInstance))
+			{
+				// Ability instances may be missing for replays.
+				ModularAbilityInstance->OnPawnAvatarSet();
+				ModularAbilityInstance->TryActivateAbilityOnSpawn(AbilityActorInfo.Get(), AbilitySpec);
+			}
+		}
 	}
 }
 
@@ -106,7 +114,7 @@ void UModularAbilitySystemComponent::CancelAbilitiesByFunc(TShouldCancelAbilityF
 		}
 
 		if (UModularGameplayAbility* ModularAbilityCDO = CastChecked<UModularGameplayAbility>(AbilitySpec.Ability);
-			ModularAbilityCDO->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::NonInstanced)
+			ModularAbilityCDO->GetInstancingPolicy() != EGameplayAbilityInstancingPolicy::InstancedPerActor)
 		{
 			// Cancel all the spawned instances, not the CDO.
 			for (TArray<UGameplayAbility*> Instances = AbilitySpec.GetAbilityInstances();
@@ -159,9 +167,16 @@ void UModularAbilitySystemComponent::AbilitySpecInputPressed(FGameplayAbilitySpe
 	// Use replicated events instead so that the WaitInputPress ability task works.
 	if (Spec.IsActive())
 	{
-		// Invoke the InputPressed event. This is not replicated here.
-		// If someone is listening, they may replicate the InputPressed event to the server.
-		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputPressed, Spec.Handle, Spec.ActivationInfo.GetActivationPredictionKey());
+		for (UGameplayAbility* AbilityInstance : Spec.GetAbilityInstances())
+		{
+			// Access activation info from the instance
+			if (UModularGameplayAbility* ModularAbilityInstance = Cast<UModularGameplayAbility>(AbilityInstance))
+			{
+				// Invoke the InputPressed event. This is not replicated here.
+				// If someone is listening, they may replicate the InputPressed event to the server.
+				InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputPressed, Spec.Handle, ModularAbilityInstance->GetCurrentActivationInfo().GetActivationPredictionKey());
+			}
+		}
 	}
 }
 
@@ -173,9 +188,16 @@ void UModularAbilitySystemComponent::AbilitySpecInputReleased(FGameplayAbilitySp
 	// Use replicated events instead so that the WaitInputRelease ability task works.
 	if (Spec.IsActive())
 	{
-		// Invoke the InputReleased event. This is not replicated here.
-		// If someone is listening, they may replicate the InputReleased event to the server.
-		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased, Spec.Handle, Spec.ActivationInfo.GetActivationPredictionKey());
+		for (UGameplayAbility* AbilityInstance : Spec.GetAbilityInstances())
+		{
+			// Access activation info from the instance
+			if (UModularGameplayAbility* ModularAbilityInstance = Cast<UModularGameplayAbility>(AbilityInstance))
+			{
+				// Invoke the InputReleased event. This is not replicated here.
+				// If someone is listening, they may replicate the InputReleased event to the server.
+				InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased, Spec.Handle,ModularAbilityInstance->GetCurrentActivationInfo().GetActivationPredictionKey());
+			}
+		}
 	}
 }
 
@@ -185,7 +207,7 @@ void UModularAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& 
 	{
 		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
 		{
-			if (AbilitySpec.Ability && (AbilitySpec.DynamicAbilityTags.HasTagExact(InputTag)))
+			if (AbilitySpec.Ability && (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)))
 			{
 				InputPressedSpecHandles.AddUnique(AbilitySpec.Handle);
 				InputHeldSpecHandles.AddUnique(AbilitySpec.Handle);
@@ -200,7 +222,7 @@ void UModularAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag&
 	{
 		for (const FGameplayAbilitySpec& AbilitySpec : ActivatableAbilities.Items)
 		{
-			if (AbilitySpec.Ability && (AbilitySpec.DynamicAbilityTags.HasTagExact(InputTag)))
+			if (AbilitySpec.Ability && (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)))
 			{
 				InputReleasedSpecHandles.AddUnique(AbilitySpec.Handle);
 				InputHeldSpecHandles.Remove(AbilitySpec.Handle);
